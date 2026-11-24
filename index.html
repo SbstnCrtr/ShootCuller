@@ -91,6 +91,9 @@ kbd{font:500 12px Roboto,sans-serif;border:1px solid #5f6368;border-bottom-width
 .frow small{margin-left:auto;color:var(--dim);white-space:nowrap}
 .here{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
 .here .grow{flex:1}
+#sortSel{font:14px Roboto,sans-serif;color:var(--ink);background:#202124;border:1px solid var(--line);border-radius:18px;padding:7px 12px;min-height:36px;cursor:pointer}
+.posbtn{border:0;border-bottom:1px dashed #9aa0a6;border-radius:0;padding:0 2px;min-height:0;color:var(--ink);font:inherit}.posbtn:hover{background:#ffffff14}
+#posIn{width:76px;font:14px Roboto,sans-serif;padding:2px 6px;border-radius:6px;border:1px solid var(--acc);background:#202124;color:var(--ink)}
 button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}button.pri:disabled:hover{background:var(--acc)}
 #zoomMsg{position:absolute;right:16px;top:16px;background:#000b;padding:6px 12px;border-radius:14px;font-size:13px;color:var(--ink);pointer-events:none}
 </style>
@@ -129,6 +132,7 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}
     <div class="name" id="fname"></div>
     <span class="count" id="count"></span>
     <span id="save"></span>
+    <select id="sortSel" title="Sort photos" aria-label="Sort photos"><option value="name">Sort: Name</option><option value="added">Sort: Date added</option><option value="taken">Sort: Date taken</option></select>
     <button id="reviewBtn" class="hide" title="Exit review (Esc)">Exit review</button>
     <button id="gridBtn" title="Grid (G)">Grid</button>
     <button class="ico" id="infoBtn" title="Details (I)" aria-label="Details"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z"/></svg></button>
@@ -144,7 +148,7 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}
     <span class="pill"><kbd>2</kbd><i class="dot" style="background:var(--strong)"></i>Strong</span>
     <span class="pill"><kbd>3</kbd><i class="dot" style="background:var(--fine)"></i>Fine</span>
     <span class="pill"><kbd>X</kbd><i class="dot" style="background:var(--reject)"></i>Reject</span>
-    <span><kbd>0</kbd>clear</span><span><kbd>Z</kbd>100%</span><span><kbd>U</kbd>undo</span><span><kbd>N</kbd>next unrated</span><span><kbd>I</kbd>details</span><span><kbd>G</kbd>grid</span><span><kbd>R</kbd>review keepers</span>
+    <span><kbd>0</kbd>clear</span><span><kbd>Z</kbd>100%</span><span><kbd>U</kbd>undo</span><span><kbd>N</kbd>next unrated</span><span><kbd>I</kbd>details</span><span><kbd>G</kbd>grid</span><span><kbd>R</kbd>review keepers</span><span><kbd>J</kbd>jump to #</span>
   </footer>
 </section>
 
@@ -272,7 +276,8 @@ async function openShoot(id){
       if(f.files[0]){progId=f.files[0].id;try{prog=await (await api('/files/'+progId+qs({alt:'media',supportsAllDrives:true}),{raw:true})).json()}catch{}}}
     const local=LS.get('shoot:'+id);if(local&&(!prog.updated||local.updated>prog.updated))prog=local;
     full.forEach(u=>URL.revokeObjectURL(u));full.clear();
-    Object.assign(S,{folder:{id,name:meta.name,canAdd},files,progId,ratings:prog.ratings||{},exported:prog.exported||{},dest:prog.dest||{},idx:Math.min(prog.idx||0,files.length-1),gsel:null});
+    Object.assign(S,{folder:{id,name:meta.name,canAdd},files,progId,ratings:prog.ratings||{},exported:prog.exported||{},dest:prog.dest||{},idx:Math.min(prog.idx||0,files.length-1),gsel:null,sort:prog.sort||LS.get('sort')||'name'});
+    sortFiles(prog.cur);$('sortSel').value=S.sort;
     undo.length=0;msg('');
     $('start').classList.add('hide');$('app').classList.remove('hide');
     show();persist(true);
@@ -282,7 +287,16 @@ async function openShoot(id){
 /* ---------- saving progress (file in the shoot folder + this browser) ---------- */
 let saveT=0,saving=false,again=false;
 function setSave(t){$('save').textContent=t}
-function snapshot(){return {version:1,ratings:S.ratings,exported:S.exported,dest:S.dest,idx:S.idx,updated:Date.now()}}
+function snapshot(){return {version:1,ratings:S.ratings,exported:S.exported,dest:S.dest,idx:S.idx,cur:S.files[S.idx]&&S.files[S.idx].id,sort:S.sort,updated:Date.now()}}
+function sortFiles(keepId){
+  keepId=keepId||(S.files[S.idx]&&S.files[S.idx].id);
+  const nm=(a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true});
+  const taken=f=>(f.imageMediaMetadata&&f.imageMediaMetadata.time)?f.imageMediaMetadata.time.replace(/^(\d{4}):(\d\d):(\d\d)/,'$1-$2-$3'):(f.createdTime||'');
+  const key=S.sort==='added'?f=>f.createdTime||'':S.sort==='taken'?taken:null;
+  S.files.sort(key?(a,b)=>{const x=key(a),y=key(b);return x<y?-1:x>y?1:nm(a,b)}:nm);
+  const i=S.files.findIndex(f=>f.id===keepId);if(i>=0)S.idx=i;
+}
+$('sortSel').addEventListener('change',e=>{S.sort=e.target.value;LS.set('sort',S.sort);e.target.blur();sortFiles();if(S.grid)renderGrid();show();persist()});
 function persist(quiet){
   const snap=snapshot();LS.set('shoot:'+S.folder.id,snap);
   const r=LS.get('recent')||[],rated=Object.keys(S.ratings).length,keep=Object.values(S.ratings).filter(x=>KEEP.includes(x)).length;
@@ -356,10 +370,22 @@ async function show(){
 }
 function counts(){
   const v=Object.values(S.ratings),c=t=>v.filter(r=>r===t).length,k=c('best')+c('strong')+c('fine');
-  const pos=S.only?(()=>{const m=S.files.filter(match);const p=m.indexOf(cur());return `<b style="color:var(--acc)">Reviewing ${ONLY[S.only]}</b> · ${p<0?'–':p+1} / ${m.length} ·`})():`${(S.idx+1).toLocaleString()} / ${S.files.length.toLocaleString()} ·`;
+  const pos=S.only?(()=>{const m=S.files.filter(match);const p=m.indexOf(cur());return `<b style="color:var(--acc)">Reviewing ${ONLY[S.only]}</b> · <button class="posbtn" id="posBtn" title="Jump to a photo number (J)">${p<0?'–':p+1}</button> / ${m.length} ·`})():`<button class="posbtn" id="posBtn" title="Jump to a photo number (J)">${(S.idx+1).toLocaleString()}</button> / ${S.files.length.toLocaleString()} ·`;
   $('count').innerHTML=`${pos} <b style="color:var(--ink)">${k}</b> keepers <span class="pill" style="margin-left:8px"><i class="dot" style="background:var(--best)"></i>${c('best')} <i class="dot" style="background:var(--strong);margin-left:6px"></i>${c('strong')} <i class="dot" style="background:var(--fine);margin-left:6px"></i>${c('fine')} <i class="dot" style="background:var(--reject);margin-left:6px"></i>${c('reject')}</span>`;
 }
 function badge(){const r=S.ratings[cur().id],b=$('badge');if(!r){b.classList.add('hide');return}b.classList.remove('hide');b.textContent=TIERS[r][0];b.style.background=TIERS[r][1]}
+function openJump(){
+  const b=$('posBtn');if(!b)return;
+  const list=S.only?S.files.filter(match):S.files,total=list.length;
+  const inp=document.createElement('input');inp.id='posIn';inp.type='number';inp.min=1;inp.max=total;inp.value=Math.max(1,list.indexOf(cur())+1);inp.setAttribute('aria-label','Photo number, 1 to '+total);
+  b.replaceWith(inp);inp.focus();inp.select();
+  let done=false;const finish=jump=>{if(done)return;done=true;
+    if(jump){let n=parseInt(inp.value,10);if(n>0){n=Math.min(n,total);const i=S.files.indexOf(list[n-1]);if(i>=0&&i!==S.idx){go(i);return}}}
+    counts()};
+  inp.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});
+  inp.addEventListener('blur',()=>finish(false));
+}
+$('count').addEventListener('click',e=>{if(e.target.closest('#posBtn'))openJump()});
 function go(i){i=Math.max(0,Math.min(S.files.length-1,i));if(i===S.idx)return;S.idx=i;show();persist()}
 function rate(id,r,adv){
   const prev=S.ratings[id]||null;if(prev===r)return;
@@ -488,6 +514,7 @@ $('modal').addEventListener('click',e=>{if(e.target.id==='modal'&&!exporting)clo
 addEventListener('resize',pan);
 addEventListener('keydown',e=>{
   if($('app').classList.contains('hide')||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;
   if(!$('modal').classList.contains('hide')){if(e.key==='Escape'&&!exporting)closeModal();return}
   const k=e.key.toLowerCase(),map={'1':'best','2':'strong','3':'fine','x':'reject','0':null,'backspace':null};
   if(S.grid){
@@ -504,6 +531,7 @@ addEventListener('keydown',e=>{
   else if(k==='z'){if($('img').src)toggleZoom()}
   else if(k==='u')doUndo();else if(k==='n')nextUnrated();else if(k==='i')toggleInfo();else if(k==='g')toggleGrid(true);
   else if(k==='r'){S.only?endReview():startReview('keep')}
+  else if(k==='j'){e.preventDefault();openJump()}
   else if(k==='escape'){if(S.zoom)toggleZoom();else if(S.info)toggleInfo();else if(S.only)endReview()}
   else if(k==='home'){const i=S.only?nextMatch(-1,1):0;if(i>=0)go(i)}else if(k==='end'){const i=S.only?nextMatch(S.files.length,-1):S.files.length-1;if(i>=0)go(i)}
 });
