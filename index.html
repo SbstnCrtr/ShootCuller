@@ -112,7 +112,8 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}
         <button type="submit">Open link</button>
       </form>
       <div id="recent" class="hide"><h2>Recent shoots</h2><div id="recentList"></div></div>
-      <h2 style="font-size:14px;font-weight:500;color:var(--dim);margin:28px 0 4px">Browse Drive</h2>
+      <h2 style="font-size:14px;font-weight:500;color:var(--dim);margin:28px 0 8px">Find a shoot</h2>
+      <input id="fsearch" type="search" placeholder="Search folders by name" autocomplete="off" aria-label="Search folders" style="width:100%;font:16px Roboto,sans-serif;padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:#202124;color:var(--ink);min-height:44px;margin-bottom:10px">
       <div class="tabs"><button id="tabMine" class="on">My Drive</button><button id="tabShared">Shared with me</button></div>
       <div class="crumbs" id="crumbs"></div>
       <div class="flist" id="flist"></div>
@@ -128,6 +129,7 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}
     <div class="name" id="fname"></div>
     <span class="count" id="count"></span>
     <span id="save"></span>
+    <button id="reviewBtn" class="hide" title="Exit review (Esc)">Exit review</button>
     <button id="gridBtn" title="Grid (G)">Grid</button>
     <button class="ico" id="infoBtn" title="Details (I)" aria-label="Details"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z"/></svg></button>
   </header>
@@ -142,7 +144,7 @@ button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}
     <span class="pill"><kbd>2</kbd><i class="dot" style="background:var(--strong)"></i>Strong</span>
     <span class="pill"><kbd>3</kbd><i class="dot" style="background:var(--fine)"></i>Fine</span>
     <span class="pill"><kbd>X</kbd><i class="dot" style="background:var(--reject)"></i>Reject</span>
-    <span><kbd>0</kbd>clear</span><span><kbd>Z</kbd>100%</span><span><kbd>U</kbd>undo</span><span><kbd>N</kbd>next unrated</span><span><kbd>I</kbd>details</span><span><kbd>G</kbd>grid</span>
+    <span><kbd>0</kbd>clear</span><span><kbd>Z</kbd>100%</span><span><kbd>U</kbd>undo</span><span><kbd>N</kbd>next unrated</span><span><kbd>I</kbd>details</span><span><kbd>G</kbd>grid</span><span><kbd>R</kbd>review keepers</span>
   </footer>
 </section>
 
@@ -161,7 +163,7 @@ const PROG='Shoot Culler progress.json';
 const FOLDER='application/vnd.google-apps.folder';
 const API='https://www.googleapis.com/drive/v3',UP='https://www.googleapis.com/upload/drive/v3';
 const SCOPE='https://www.googleapis.com/auth/drive';
-const S={folder:null,files:[],idx:0,ratings:{},exported:{},progId:null,zoom:false,info:false,grid:false,gsel:null};
+const S={folder:null,files:[],idx:0,ratings:{},exported:{},progId:null,zoom:false,info:false,grid:false,gsel:null,only:null};
 const undo=[];const full=new Map();
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const LS={get(k){try{return JSON.parse(localStorage.getItem('sc:'+k))}catch{return null}},set(k,v){try{localStorage.setItem('sc:'+k,JSON.stringify(v))}catch{}}};
@@ -217,11 +219,13 @@ async function browse(id,name,reset=true){
   $('crumbs').innerHTML=path.map((p,i)=>(i?'<span>›</span>':'')+`<button data-i="${i}">${esc(p.name)}</button>`).join('');
   $('flist').innerHTML='<div class="frow" style="color:var(--dim)">Loading…</div>';$('cullHere').disabled=true;$('hereInfo').textContent='';
   try{
-    const q=id==='shared'?`sharedWithMe and mimeType='${FOLDER}' and trashed=false`:`'${id}' in parents and mimeType='${FOLDER}' and trashed=false`;
+    const term=$('fsearch').value.trim(),qe=s=>s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const q=id==='search'?`name contains '${qe(term)}' and mimeType='${FOLDER}' and trashed=false`:id==='shared'?`sharedWithMe and mimeType='${FOLDER}' and trashed=false`:`'${id}' in parents and mimeType='${FOLDER}' and trashed=false`;
     const r=await api('/files'+qs({q,pageSize:200,orderBy:'modifiedTime desc',fields:'files(id,name,modifiedTime)',supportsAllDrives:true,includeItemsFromAllDrives:true}));
     const ico='<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>';
     $('flist').innerHTML=r.files.length?r.files.map(f=>`<button class="frow" data-id="${esc(f.id)}" data-n="${esc(f.name)}">${ico}<span>${esc(f.name)}</span><small>${new Date(f.modifiedTime).toLocaleDateString()}</small></button>`).join(''):'<div class="frow" style="color:var(--dim)">No folders in here.</div>';
-    if(id!=='shared'&&id!=='root'){
+    if(id==='search'&&!r.files.length)$('flist').innerHTML='<div class="frow" style="color:var(--dim)">No folders match that name.</div>';
+    if(id!=='shared'&&id!=='root'&&id!=='search'){
       const c=await api('/files'+qs({q:`'${id}' in parents and mimeType contains 'image/' and trashed=false`,pageSize:1000,fields:'files(id),nextPageToken',supportsAllDrives:true,includeItemsFromAllDrives:true}));
       const n=c.files.length;$('hereInfo').textContent=n?`${n}${c.nextPageToken?'+':''} photos in “${path[path.length-1].name}”`:'No photos directly in this folder.';$('cullHere').disabled=!n;
     }
@@ -231,8 +235,14 @@ $('crumbs').addEventListener('click',e=>{const b=e.target.closest('button');if(b
 $('flist').addEventListener('click',e=>{const b=e.target.closest('.frow[data-id]');if(b)browse(b.dataset.id,b.dataset.n,false)});
 $('flist').addEventListener('dblclick',e=>{const b=e.target.closest('.frow[data-id]');if(b)openShoot(b.dataset.id)});
 $('cullHere').onclick=()=>openShoot(path[path.length-1].id);
-$('tabMine').onclick=()=>{$('tabMine').classList.add('on');$('tabShared').classList.remove('on');browse('root','My Drive')};
-$('tabShared').onclick=()=>{$('tabShared').classList.add('on');$('tabMine').classList.remove('on');browse('shared','Shared with me')};
+let searchT=0;
+$('fsearch').addEventListener('input',()=>{clearTimeout(searchT);searchT=setTimeout(()=>{
+  const t=$('fsearch').value.trim();
+  if(t.length<2){if(path[0]&&path[0].id==='search')($('tabShared').classList.contains('on')?browse('shared','Shared with me'):browse('root','My Drive'));return}
+  browse('search',`Search: “${t}”`);
+},350)});
+$('tabMine').onclick=()=>{$('fsearch').value='';$('tabMine').classList.add('on');$('tabShared').classList.remove('on');browse('root','My Drive')};
+$('tabShared').onclick=()=>{$('fsearch').value='';$('tabShared').classList.add('on');$('tabMine').classList.remove('on');browse('shared','Shared with me')};
 $('openForm').addEventListener('submit',e=>{e.preventDefault();const v=$('folderIn').value.trim(),m=v.match(/folders\/([\w-]{10,})/)||v.match(/[?&]id=([\w-]{10,})/)||v.match(/^([\w-]{20,})$/);if(!m){msg('That doesn\'t look like a Drive folder link.',true);return}openShoot(m[1])});
 function renderRecent(){
   const r=LS.get('recent')||[];if(!r.length){$('recent').classList.add('hide');return}
@@ -313,6 +323,18 @@ function preload(f){if(!f||pre.has(f.id))return;const u=prevUrl(f,sizeFor());if(
 
 /* ---------- viewer ---------- */
 const cur=()=>S.files[S.idx];
+const ONLY={keep:'keepers',best:'Best',strong:'Strong',fine:'Fine'};
+const match=f=>{const r=S.ratings[f.id];return !S.only||(S.only==='keep'?KEEP.includes(r):r===S.only)};
+function nextMatch(from,d){for(let i=from+d;i>=0&&i<S.files.length;i+=d)if(match(S.files[i]))return i;return -1}
+function step(d){if(!S.only){go(S.idx+d);return}const i=nextMatch(S.idx,d);if(i>=0)go(i)}
+function startReview(only){
+  S.only=only;
+  if(S.grid){S.grid=false;$('grid').classList.add('hide');$('gridBtn').textContent='Grid';const g=S.files.findIndex(f=>f.id===S.gsel);if(g>=0&&match(S.files[g]))S.idx=g}
+  const i=match(cur())?S.idx:nextMatch(-1,1);
+  if(i<0){S.only=null;return}
+  $('reviewBtn').classList.remove('hide');S.idx=i;show();
+}
+function endReview(){S.only=null;$('reviewBtn').classList.add('hide');counts();badge()}
 let showTok=0;
 async function show(){
   const f=cur();if(!f)return;const tok=++showTok;
@@ -330,11 +352,12 @@ async function show(){
     if(tok!==showTok)return;
     img.style.visibility='';$('load').classList.add('hide');if(S.info)details();
   }catch(e){if(tok!==showTok)return;$('load').firstElementChild.textContent='Couldn\'t load this photo ('+e.message+'). Press → to skip.'}
-  for(let d=1;d<=4;d++)preload(S.files[S.idx+d]);preload(S.files[S.idx-1]);
+  {let i=S.idx;for(let d=0;d<4;d++){i=S.only?nextMatch(i,1):i+1;if(i<0)break;preload(S.files[i])}const p=S.only?nextMatch(S.idx,-1):S.idx-1;if(p>=0)preload(S.files[p])}
 }
 function counts(){
   const v=Object.values(S.ratings),c=t=>v.filter(r=>r===t).length,k=c('best')+c('strong')+c('fine');
-  $('count').innerHTML=`${(S.idx+1).toLocaleString()} / ${S.files.length.toLocaleString()} · <b style="color:var(--ink)">${k}</b> keepers <span class="pill" style="margin-left:8px"><i class="dot" style="background:var(--best)"></i>${c('best')} <i class="dot" style="background:var(--strong);margin-left:6px"></i>${c('strong')} <i class="dot" style="background:var(--fine);margin-left:6px"></i>${c('fine')} <i class="dot" style="background:var(--reject);margin-left:6px"></i>${c('reject')}</span>`;
+  const pos=S.only?(()=>{const m=S.files.filter(match);const p=m.indexOf(cur());return `<b style="color:var(--acc)">Reviewing ${ONLY[S.only]}</b> · ${p<0?'–':p+1} / ${m.length} ·`})():`${(S.idx+1).toLocaleString()} / ${S.files.length.toLocaleString()} ·`;
+  $('count').innerHTML=`${pos} <b style="color:var(--ink)">${k}</b> keepers <span class="pill" style="margin-left:8px"><i class="dot" style="background:var(--best)"></i>${c('best')} <i class="dot" style="background:var(--strong);margin-left:6px"></i>${c('strong')} <i class="dot" style="background:var(--fine);margin-left:6px"></i>${c('fine')} <i class="dot" style="background:var(--reject);margin-left:6px"></i>${c('reject')}</span>`;
 }
 function badge(){const r=S.ratings[cur().id],b=$('badge');if(!r){b.classList.add('hide');return}b.classList.remove('hide');b.textContent=TIERS[r][0];b.style.background=TIERS[r][1]}
 function go(i){i=Math.max(0,Math.min(S.files.length-1,i));if(i===S.idx)return;S.idx=i;show();persist()}
@@ -343,7 +366,10 @@ function rate(id,r,adv){
   undo.push({id,prev,idx:S.idx});if(undo.length>500)undo.shift();
   if(r)S.ratings[id]=r;else delete S.ratings[id];persist();
   if(S.grid){renderGrid();return}
-  counts();badge();if(adv&&S.idx<S.files.length-1)setTimeout(()=>go(S.idx+1),120);
+  counts();badge();
+  if(S.only){if(!S.files.some(match)){endReview();toggleGrid(true);return}
+    if(adv||!match(cur()))setTimeout(()=>{let i=nextMatch(S.idx,1);if(i<0)i=nextMatch(S.idx,-1);if(i>=0&&i!==S.idx)go(i)},120);return}
+  if(adv&&S.idx<S.files.length-1)setTimeout(()=>go(S.idx+1),120);
 }
 function doUndo(){
   const u=undo.pop();if(!u)return;if(u.prev)S.ratings[u.id]=u.prev;else delete S.ratings[u.id];persist();
@@ -393,14 +419,14 @@ function renderGrid(){
   const g=$('grid'),st=g.scrollTop,groups={best:[],strong:[],fine:[],unrated:[],reject:[]};
   S.files.forEach(f=>groups[S.ratings[f.id]||'unrated'].push(f));
   const k=groups.best.length+groups.strong.length+groups.fine.length;
-  const sec=(label,color,list)=>!list.length?'':`<h2><i class="dot" style="background:${color}"></i>${label} <small>${list.length}</small></h2><div class="tiles">${list.map(f=>`<button class="tile${f.id===S.gsel?' sel':''}" data-id="${esc(f.id)}" title="${esc(f.name)}"><img alt="" loading="lazy" referrerpolicy="no-referrer" data-t="${esc(f.id)}"><span>${esc(f.name)}</span></button>`).join('')}</div>`;
-  g.innerHTML=`<div class="gridbar"><b>${k} keepers</b><span class="count">Click a photo, then press <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>X</kbd><kbd>0</kbd> to change its tier · <kbd>Enter</kbd> to open it full screen</span><span class="grow"></span><button class="pri" id="exportBtn"${k?'':' disabled'}>Copy keepers to Selects</button></div>`+
-    sec('Best','var(--best)',groups.best)+sec('Strong','var(--strong)',groups.strong)+sec('Fine','var(--fine)',groups.fine)+sec('Not rated yet','#5f6368',groups.unrated)+sec('Rejected','var(--reject)',groups.reject);
-  g.scrollTop=st;$('exportBtn').onclick=exportDialog;
+  const sec=(label,color,list,rk)=>!list.length?'':`<h2><i class="dot" style="background:${color}"></i>${label} <small>${list.length}</small>${rk?`<button data-review="${rk}" style="margin-left:8px;min-height:30px;padding:3px 12px;font-size:13px">Review full screen</button>`:''}</h2><div class="tiles">${list.map(f=>`<button class="tile${f.id===S.gsel?' sel':''}" data-id="${esc(f.id)}" title="${esc(f.name)}"><img alt="" loading="lazy" referrerpolicy="no-referrer" data-t="${esc(f.id)}"><span>${esc(f.name)}</span></button>`).join('')}</div>`;
+  g.innerHTML=`<div class="gridbar"><b>${k} keepers</b><span class="count">Click a photo, then press <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>X</kbd><kbd>0</kbd> to change its tier · <kbd>Enter</kbd> to open it full screen</span><span class="grow"></span><button id="revAll"${k?'':' disabled'}>Review keepers full screen <kbd style="margin:0 0 0 6px">R</kbd></button><button class="pri" id="exportBtn"${k?'':' disabled'}>Copy keepers to Selects</button></div>`+
+    sec('Best','var(--best)',groups.best,'best')+sec('Strong','var(--strong)',groups.strong,'strong')+sec('Fine','var(--fine)',groups.fine,'fine')+sec('Not rated yet','#5f6368',groups.unrated)+sec('Rejected','var(--reject)',groups.reject);
+  g.scrollTop=st;$('exportBtn').onclick=exportDialog;$('revAll').onclick=()=>startReview('keep');
   const byId=new Map(S.files.map(f=>[f.id,f]));
   g.querySelectorAll('img[data-t]').forEach(im=>{const f=byId.get(im.dataset.t),u=f&&prevUrl(f,400);if(u)im.src=u;im.onerror=()=>{im.onerror=null;im.style.opacity=.2}});
 }
-$('grid').addEventListener('click',e=>{const t=e.target.closest('.tile');if(!t)return;S.gsel=t.dataset.id;$('grid').querySelectorAll('.tile.sel').forEach(x=>x.classList.remove('sel'));t.classList.add('sel')});
+$('grid').addEventListener('click',e=>{const rb=e.target.closest('[data-review]');if(rb){startReview(rb.dataset.review);return}const t=e.target.closest('.tile');if(!t)return;S.gsel=t.dataset.id;$('grid').querySelectorAll('.tile.sel').forEach(x=>x.classList.remove('sel'));t.classList.add('sel')});
 $('grid').addEventListener('dblclick',e=>{const t=e.target.closest('.tile');if(t){S.gsel=t.dataset.id;toggleGrid(false)}});
 function gridMove(d){
   const tiles=[...$('grid').querySelectorAll('.tile')];let i=tiles.findIndex(t=>t.dataset.id===S.gsel);
@@ -456,8 +482,8 @@ async function runExport(todo){
 }
 
 /* ---------- navigation & keys ---------- */
-$('homeBtn').onclick=()=>{toggleGrid(false);$('app').classList.add('hide');$('start').classList.remove('hide');renderRecent()};
-$('gridBtn').onclick=()=>toggleGrid();$('infoBtn').onclick=toggleInfo;
+$('homeBtn').onclick=()=>{toggleGrid(false);endReview();$('app').classList.add('hide');$('start').classList.remove('hide');renderRecent()};
+$('gridBtn').onclick=()=>toggleGrid();$('reviewBtn').onclick=endReview;$('infoBtn').onclick=toggleInfo;
 $('modal').addEventListener('click',e=>{if(e.target.id==='modal'&&!exporting)closeModal()});
 addEventListener('resize',pan);
 addEventListener('keydown',e=>{
@@ -467,17 +493,19 @@ addEventListener('keydown',e=>{
   if(S.grid){
     if(k in map&&S.gsel){e.preventDefault();rate(S.gsel,map[k],false)}
     else if(k==='arrowright'){e.preventDefault();gridMove(1)}else if(k==='arrowleft'){e.preventDefault();gridMove(-1)}
+    else if(k==='r'){e.preventDefault();startReview('keep')}
     else if(k==='enter'||k==='g'||k==='escape'){e.preventDefault();toggleGrid(false)}
     else if(k==='u')doUndo();
     return;
   }
-  if(k==='arrowright'||k===' '){e.preventDefault();go(S.idx+1)}
-  else if(k==='arrowleft'){e.preventDefault();go(S.idx-1)}
+  if(k==='arrowright'||k===' '){e.preventDefault();step(1)}
+  else if(k==='arrowleft'){e.preventDefault();step(-1)}
   else if(k in map){e.preventDefault();rate(cur().id,map[k],map[k]!==null)}
   else if(k==='z'){if($('img').src)toggleZoom()}
   else if(k==='u')doUndo();else if(k==='n')nextUnrated();else if(k==='i')toggleInfo();else if(k==='g')toggleGrid(true);
-  else if(k==='escape'){if(S.zoom)toggleZoom();else if(S.info)toggleInfo()}
-  else if(k==='home')go(0);else if(k==='end')go(S.files.length-1);
+  else if(k==='r'){S.only?endReview():startReview('keep')}
+  else if(k==='escape'){if(S.zoom)toggleZoom();else if(S.info)toggleInfo();else if(S.only)endReview()}
+  else if(k==='home'){const i=S.only?nextMatch(-1,1):0;if(i>=0)go(i)}else if(k==='end'){const i=S.only?nextMatch(S.files.length,-1):S.files.length-1;if(i>=0)go(i)}
 });
 addEventListener('beforeunload',e=>{if(saving||exporting){e.preventDefault();e.returnValue=''}});
 
