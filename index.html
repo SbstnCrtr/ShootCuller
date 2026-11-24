@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shoot Culler</title>
+<meta name="referrer" content="no-referrer">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async></script>
+<style>
+/* VOICE: quiet, tool-like, out of the way of the photos.
+   IDEA: Google Drive's dark photo preview, with a culling keybar.
+   PICTURE: the photo itself, edge to edge.
+   COLOUR and TYPE: viewer black #1b1b1d, tier colours gold/blue/grey, reject coral; Roboto.
+   LAYOUT: top bar (file name, counter), stage, key bar; grid groups by tier. */
+:root{color-scheme:dark;--bg:#1b1b1d;--bar:#2a2a2d;--ink:#e8eaed;--dim:#9aa0a6;--line:#3c4043;--best:#f6c344;--strong:#7cacf8;--fine:#bdc1c6;--reject:#f28b82;--acc:#8ab4f8}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Roboto,system-ui,sans-serif;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:1px solid var(--line);border-radius:18px;padding:8px 16px;cursor:pointer;min-height:36px}
+button:hover{background:#ffffff14}button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button.pri{background:var(--acc);color:#0b1d3a;border-color:var(--acc);font-weight:500}
+.hide{display:none!important}
+kbd{font:500 12px Roboto,sans-serif;border:1px solid #5f6368;border-bottom-width:2px;border-radius:4px;padding:1px 6px;margin-right:6px;color:var(--ink)}
+/* start */
+#start{height:100%;overflow:auto;display:grid;place-items:start center;padding:8vh 20px}
+#start .card{width:min(620px,100%)}
+#start h1{font-size:36px;line-height:1.1;margin:0 0 8px;font-weight:500}
+#start p{color:var(--dim);margin:0 0 24px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+#folderIn{flex:1 1 300px;font:16px Roboto,sans-serif;padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:#202124;color:var(--ink);min-height:44px}
+#recent{margin-top:32px}#recent h2{font-size:14px;font-weight:500;color:var(--dim);margin:0 0 8px}
+.shoot{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;border-radius:8px;padding:12px 14px;margin-bottom:6px}
+.shoot small{color:var(--dim)}
+.msg{color:var(--reject);margin-top:12px;min-height:1.5em}
+/* viewer */
+#app{height:100%;display:grid;grid-template-rows:56px 1fr auto}
+#top{display:flex;align-items:center;gap:14px;padding:0 12px 0 8px;background:#0000;border-bottom:1px solid #ffffff10}
+#top .name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+#top .ico{border:0;border-radius:50%;width:40px;height:40px;padding:0;display:grid;place-items:center}
+.count{color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+#save{color:var(--dim);font-size:13px;white-space:nowrap}
+#mid{position:relative;overflow:hidden;display:grid;grid-template-columns:1fr auto}
+#stage{position:relative;overflow:hidden;cursor:zoom-in}
+#stage.zoom{cursor:zoom-out}
+#stage img{position:absolute;inset:0;margin:auto;max-width:calc(100% - 32px);max-height:calc(100% - 32px);user-select:none;-webkit-user-drag:none}
+#stage.zoom img{max-width:none;max-height:none;inset:auto;margin:0;left:0;top:0;will-change:transform}
+#badge{position:absolute;top:16px;left:16px;padding:6px 14px;border-radius:16px;font-weight:700;font-size:14px;color:#111;pointer-events:none}
+#load{position:absolute;inset:0;display:grid;place-items:center;color:var(--dim);pointer-events:none}
+.spin{width:28px;height:28px;border:3px solid #ffffff22;border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 10px}
+@keyframes sp{to{transform:rotate(1turn)}}
+#info{width:340px;background:#202124;border-left:1px solid var(--line);overflow:auto;padding:20px}
+#info h3{margin:0 0 16px;font-weight:500;font-size:16px}
+#info dl{margin:0;display:grid;grid-template-columns:120px 1fr;gap:10px 12px;font-size:14px}
+#info dt{color:var(--dim)}#info dd{margin:0;overflow-wrap:anywhere}
+#keys{display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:center;padding:10px 12px 14px;color:var(--dim);font-size:13px;border-top:1px solid #ffffff10}
+/* grid */
+#grid{position:absolute;inset:0;overflow:auto;background:var(--bg);padding:8px 24px 60px;z-index:3}
+#grid h2{font-size:16px;font-weight:500;margin:28px 0 12px;display:flex;align-items:center;gap:10px}
+#grid h2 small{color:var(--dim);font-weight:400}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.tile{position:relative;aspect-ratio:3/2;border-radius:8px;overflow:hidden;background:#2a2a2d;border:2px solid transparent;padding:0;cursor:pointer}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tile.sel{border-color:var(--acc)}
+.tile span{position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font-size:12px;text-align:left;background:linear-gradient(#0000,#000a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gridbar{position:sticky;top:-8px;background:var(--bg);padding:14px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap;z-index:2;border-bottom:1px solid var(--line)}
+.gridbar .grow{flex:1}
+/* modal */
+#modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:9;padding:20px}
+#modal .box{background:#2d2e31;border-radius:12px;padding:24px;width:min(520px,100%)}
+#modal h3{margin:0 0 10px;font-weight:500;font-size:20px}
+#modal p{color:var(--dim);margin:0 0 16px}
+.bar{height:6px;background:#ffffff1a;border-radius:3px;overflow:hidden;margin:14px 0}
+.bar i{display:block;height:100%;background:var(--acc);width:0}
+@media(max-width:800px){#info{position:absolute;right:0;top:0;bottom:0;width:min(340px,90%)}#save{display:none}}
+@media(prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+<style>
+#start .card{width:min(760px,100%)}
+#who{color:var(--dim);font-size:14px;display:flex;gap:12px;align-items:center;margin-bottom:24px}
+#who button{padding:4px 12px;min-height:30px;font-size:13px}
+.crumbs{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:20px 0 10px;font-size:15px}
+.crumbs button{border:0;padding:4px 8px;border-radius:6px;min-height:32px}
+.crumbs span{color:var(--dim)}
+.tabs{display:flex;gap:8px;margin-top:8px}
+.tabs button.on{background:#8ab4f833;border-color:var(--acc)}
+.flist{border:1px solid var(--line);border-radius:10px;max-height:46vh;overflow:auto}
+.frow{display:flex;align-items:center;gap:12px;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:10px 14px;text-align:left;min-height:48px}
+.frow:last-child{border-bottom:0}
+.frow svg{flex:none;color:var(--dim)}
+.frow small{margin-left:auto;color:var(--dim);white-space:nowrap}
+.here{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.here .grow{flex:1}
+button:disabled{opacity:.4;cursor:default}button:disabled:hover{background:none}button.pri:disabled:hover{background:var(--acc)}
+#zoomMsg{position:absolute;right:16px;top:16px;background:#000b;padding:6px 12px;border-radius:14px;font-size:13px;color:var(--ink);pointer-events:none}
+</style>
+</head><body>
+
+<section id="start">
+  <div class="card">
+    <h1>Shoot Culler</h1>
+    <p id="intro">Rate a shoot straight from Google Drive: Best, Strong or Fine, or reject. Check the keepers in a grid, then copy them into Selects folders in Drive. Your originals aren't moved.</p>
+    <div id="setup" class="hide">
+      <p>This copy of Shoot Culler doesn't have a Google sign-in key yet. Paste the OAuth Client ID from Google Cloud Console:</p>
+      <form class="row" id="cidForm"><input id="cidIn" placeholder="1234…apps.googleusercontent.com" autocomplete="off" aria-label="Client ID" style="flex:1 1 300px;font:16px Roboto,sans-serif;padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:#202124;color:var(--ink);min-height:44px"><button class="pri">Save</button></form>
+    </div>
+    <div id="signin" class="hide"><button class="pri" id="signBtn">Sign in with Google</button></div>
+    <div id="browser" class="hide">
+      <div id="who"></div>
+      <form class="row" id="openForm">
+        <input id="folderIn" placeholder="Or paste a Drive folder link" autocomplete="off" aria-label="Drive folder link">
+        <button type="submit">Open link</button>
+      </form>
+      <div id="recent" class="hide"><h2>Recent shoots</h2><div id="recentList"></div></div>
+      <h2 style="font-size:14px;font-weight:500;color:var(--dim);margin:28px 0 4px">Browse Drive</h2>
+      <div class="tabs"><button id="tabMine" class="on">My Drive</button><button id="tabShared">Shared with me</button></div>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="flist" id="flist"></div>
+      <div class="here"><span class="grow count" id="hereInfo"></span><button class="pri" id="cullHere" disabled>Cull this folder</button></div>
+    </div>
+    <div class="msg" id="startMsg"></div>
+  </div>
+</section>
+
+<section id="app" class="hide">
+  <header id="top">
+    <button class="ico" id="homeBtn" title="All shoots" aria-label="All shoots"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg></button>
+    <div class="name" id="fname"></div>
+    <span class="count" id="count"></span>
+    <span id="save"></span>
+    <button id="gridBtn" title="Grid (G)">Grid</button>
+    <button class="ico" id="infoBtn" title="Details (I)" aria-label="Details"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z"/></svg></button>
+  </header>
+  <div id="mid">
+    <div id="stage"><img id="img" alt=""><div id="badge" class="hide"></div><div id="zoomMsg" class="hide"></div><div id="load"><div><div class="spin"></div>Loading…</div></div></div>
+    <aside id="info" class="hide"><h3>Details</h3><dl id="dl"></dl></aside>
+    <div id="grid" class="hide"></div>
+  </div>
+  <footer id="keys">
+    <span><kbd>←</kbd><kbd>→</kbd>browse</span>
+    <span class="pill"><kbd>1</kbd><i class="dot" style="background:var(--best)"></i>Best</span>
+    <span class="pill"><kbd>2</kbd><i class="dot" style="background:var(--strong)"></i>Strong</span>
+    <span class="pill"><kbd>3</kbd><i class="dot" style="background:var(--fine)"></i>Fine</span>
+    <span class="pill"><kbd>X</kbd><i class="dot" style="background:var(--reject)"></i>Reject</span>
+    <span><kbd>0</kbd>clear</span><span><kbd>Z</kbd>100%</span><span><kbd>U</kbd>undo</span><span><kbd>N</kbd>next unrated</span><span><kbd>I</kbd>details</span><span><kbd>G</kbd>grid</span>
+  </footer>
+</section>
+
+<div id="modal" class="hide"><div class="box" id="mbox"></div></div>
+
+<script>
+/* ===== Paste the OAuth Client ID between the quotes ===== */
+const CLIENT_ID = '';
+/* ======================================================== */
+{
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TIERS={best:['Best','var(--best)'],strong:['Strong','var(--strong)'],fine:['Fine','var(--fine)'],reject:['Rejected','var(--reject)']};
+const KEEP=['best','strong','fine'];
+const PROG='Shoot Culler progress.json';
+const FOLDER='application/vnd.google-apps.folder';
+const API='https://www.googleapis.com/drive/v3',UP='https://www.googleapis.com/upload/drive/v3';
+const SCOPE='https://www.googleapis.com/auth/drive';
+const S={folder:null,files:[],idx:0,ratings:{},exported:{},progId:null,zoom:false,info:false,grid:false,gsel:null};
+const undo=[];const full=new Map();
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const LS={get(k){try{return JSON.parse(localStorage.getItem('sc:'+k))}catch{return null}},set(k,v){try{localStorage.setItem('sc:'+k,JSON.stringify(v))}catch{}}};
+const cid=()=>CLIENT_ID||LS.get('clientId')||'';
+
+/* ---------- Google sign-in ---------- */
+let tokenClient=null,token=null,tokenExp=0,tokenWait=null;
+function gisReady(){return new Promise(res=>{const t=setInterval(()=>{if(window.google&&google.accounts&&google.accounts.oauth2){clearInterval(t);res()}},50)})}
+async function initAuth(){
+  await gisReady();
+  tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid(),scope:SCOPE,callback:()=>{}});
+  try{const t=JSON.parse(sessionStorage.getItem('sc:tok'));if(t&&t.exp>Date.now()+60000){token=t.token;tokenExp=t.exp}}catch{}
+}
+function getToken(interactive){
+  if(tokenWait)return tokenWait;
+  tokenWait=new Promise((res,rej)=>{
+    tokenClient.callback=r=>{tokenWait=null;if(r.error){rej(new Error(r.error_description||r.error));return}
+      token=r.access_token;tokenExp=Date.now()+(r.expires_in-60)*1000;
+      try{sessionStorage.setItem('sc:tok',JSON.stringify({token,exp:tokenExp}))}catch{}
+      res(token)};
+    tokenClient.error_callback=e=>{tokenWait=null;rej(new Error(e&&e.type==='popup_closed'?'Sign-in window was closed.':'Sign-in failed. Allow pop-ups for this site and try again.'))};
+    tokenClient.requestAccessToken({prompt:interactive?'consent':''});
+  });
+  return tokenWait;
+}
+async function api(path,opts={},tries=0){
+  if(!token||Date.now()>tokenExp)await getToken(false);
+  const base=opts.upload?UP:API;
+  const r=await fetch(base+path,{method:opts.method||'GET',body:opts.body,headers:{Authorization:'Bearer '+token,...(opts.json?{'Content-Type':'application/json'}:{}),...(opts.headers||{})}});
+  if(r.status===401&&tries<1){token=null;return api(path,opts,tries+1)}
+  if((r.status===429||r.status>=500||(r.status===403&&/rate/i.test(await r.clone().text())))&&tries<5){await sleep(500*2**tries+Math.random()*300);return api(path,opts,tries+1)}
+  if(!r.ok){let m='';try{m=(await r.json()).error.message}catch{}throw new Error(m||('Drive error '+r.status))}
+  if(opts.raw)return r;
+  return r.status===204?null:r.json();
+}
+const qs=o=>'?'+new URLSearchParams(o).toString();
+
+/* ---------- start: setup, sign in, folder browser ---------- */
+function msg(t,err){$('startMsg').style.color=err?'var(--reject)':'var(--dim)';$('startMsg').textContent=t||''}
+$('cidForm').addEventListener('submit',e=>{e.preventDefault();const v=$('cidIn').value.trim();if(!/\.apps\.googleusercontent\.com$/.test(v)){msg('That doesn\'t look like a Client ID. It ends in .apps.googleusercontent.com.',true);return}LS.set('clientId',v);location.reload()});
+$('signBtn').onclick=async()=>{msg('');try{await getToken(true);afterSignIn()}catch(e){msg(e.message,true)}};
+async function afterSignIn(){
+  $('signin').classList.add('hide');$('browser').classList.remove('hide');
+  try{const a=await api('/about'+qs({fields:'user(displayName,emailAddress)'}));
+    $('who').innerHTML=`<span>Signed in as ${esc(a.user.emailAddress)}</span><button id="outBtn">Switch account</button>`;
+    $('outBtn').onclick=()=>{try{google.accounts.oauth2.revoke(token,()=>{})}catch{}token=null;sessionStorage.removeItem('sc:tok');location.reload()};
+  }catch(e){msg(e.message,true)}
+  renderRecent();browse('root','My Drive');
+}
+let path=[],mode='mine';
+async function browse(id,name,reset=true){
+  if(reset)path=[{id,name}];else{const i=path.findIndex(p=>p.id===id);if(i>=0)path=path.slice(0,i+1);else path.push({id,name})}
+  $('crumbs').innerHTML=path.map((p,i)=>(i?'<span>›</span>':'')+`<button data-i="${i}">${esc(p.name)}</button>`).join('');
+  $('flist').innerHTML='<div class="frow" style="color:var(--dim)">Loading…</div>';$('cullHere').disabled=true;$('hereInfo').textContent='';
+  try{
+    const q=id==='shared'?`sharedWithMe and mimeType='${FOLDER}' and trashed=false`:`'${id}' in parents and mimeType='${FOLDER}' and trashed=false`;
+    const r=await api('/files'+qs({q,pageSize:200,orderBy:'modifiedTime desc',fields:'files(id,name,modifiedTime)',supportsAllDrives:true,includeItemsFromAllDrives:true}));
+    const ico='<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>';
+    $('flist').innerHTML=r.files.length?r.files.map(f=>`<button class="frow" data-id="${esc(f.id)}" data-n="${esc(f.name)}">${ico}<span>${esc(f.name)}</span><small>${new Date(f.modifiedTime).toLocaleDateString()}</small></button>`).join(''):'<div class="frow" style="color:var(--dim)">No folders in here.</div>';
+    if(id!=='shared'&&id!=='root'){
+      const c=await api('/files'+qs({q:`'${id}' in parents and mimeType contains 'image/' and trashed=false`,pageSize:1000,fields:'files(id),nextPageToken',supportsAllDrives:true,includeItemsFromAllDrives:true}));
+      const n=c.files.length;$('hereInfo').textContent=n?`${n}${c.nextPageToken?'+':''} photos in “${path[path.length-1].name}”`:'No photos directly in this folder.';$('cullHere').disabled=!n;
+    }
+  }catch(e){$('flist').innerHTML='';msg(e.message,true)}
+}
+$('crumbs').addEventListener('click',e=>{const b=e.target.closest('button');if(b){const p=path[+b.dataset.i];browse(p.id,p.name,false)}});
+$('flist').addEventListener('click',e=>{const b=e.target.closest('.frow[data-id]');if(b)browse(b.dataset.id,b.dataset.n,false)});
+$('flist').addEventListener('dblclick',e=>{const b=e.target.closest('.frow[data-id]');if(b)openShoot(b.dataset.id)});
+$('cullHere').onclick=()=>openShoot(path[path.length-1].id);
+$('tabMine').onclick=()=>{$('tabMine').classList.add('on');$('tabShared').classList.remove('on');browse('root','My Drive')};
+$('tabShared').onclick=()=>{$('tabShared').classList.add('on');$('tabMine').classList.remove('on');browse('shared','Shared with me')};
+$('openForm').addEventListener('submit',e=>{e.preventDefault();const v=$('folderIn').value.trim(),m=v.match(/folders\/([\w-]{10,})/)||v.match(/[?&]id=([\w-]{10,})/)||v.match(/^([\w-]{20,})$/);if(!m){msg('That doesn\'t look like a Drive folder link.',true);return}openShoot(m[1])});
+function renderRecent(){
+  const r=LS.get('recent')||[];if(!r.length){$('recent').classList.add('hide');return}
+  $('recent').classList.remove('hide');
+  $('recentList').innerHTML=r.map(s=>`<button class="shoot" data-id="${esc(s.id)}"><span>${esc(s.name)}</span><small>${s.rated||0} / ${s.total||0} rated · ${s.keep||0} keepers</small></button>`).join('');
+}
+$('recentList').addEventListener('click',e=>{const b=e.target.closest('.shoot');if(b)openShoot(b.dataset.id)});
+
+/* ---------- open a shoot ---------- */
+const FF='id,name,mimeType,size,thumbnailLink,modifiedTime,createdTime,imageMediaMetadata(width,height,time,cameraMake,cameraModel,exposureTime,aperture,isoSpeed,focalLength,lens,flashUsed)';
+async function listPhotos(id){
+  const out=[];let tok;
+  do{const r=await api('/files'+qs({q:`'${id}' in parents and mimeType contains 'image/' and trashed=false`,pageSize:1000,orderBy:'name_natural',fields:`nextPageToken,files(${FF})`,supportsAllDrives:true,includeItemsFromAllDrives:true,...(tok?{pageToken:tok}:{})}));
+    out.push(...r.files);tok=r.nextPageToken;msg(`Reading folder… ${out.length} photos`)}while(tok);
+  return out.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+}
+async function openShoot(id){
+  msg('Reading folder…');
+  try{
+    const meta=await api('/files/'+id+qs({fields:'id,name,mimeType,capabilities(canAddChildren)',supportsAllDrives:true}));
+    if(meta.mimeType!==FOLDER)throw new Error('That link is a file, not a folder.');
+    const files=await listPhotos(id);
+    if(!files.length)throw new Error('No photos directly inside that folder.');
+    const canAdd=!!(meta.capabilities&&meta.capabilities.canAddChildren);
+    let prog={},progId=null;
+    if(canAdd){const f=await api('/files'+qs({q:`'${id}' in parents and name='${PROG}' and trashed=false`,fields:'files(id)',supportsAllDrives:true,includeItemsFromAllDrives:true}));
+      if(f.files[0]){progId=f.files[0].id;try{prog=await (await api('/files/'+progId+qs({alt:'media',supportsAllDrives:true}),{raw:true})).json()}catch{}}}
+    const local=LS.get('shoot:'+id);if(local&&(!prog.updated||local.updated>prog.updated))prog=local;
+    full.forEach(u=>URL.revokeObjectURL(u));full.clear();
+    Object.assign(S,{folder:{id,name:meta.name,canAdd},files,progId,ratings:prog.ratings||{},exported:prog.exported||{},dest:prog.dest||{},idx:Math.min(prog.idx||0,files.length-1),gsel:null});
+    undo.length=0;msg('');
+    $('start').classList.add('hide');$('app').classList.remove('hide');
+    show();persist(true);
+  }catch(e){msg(e.message,true)}
+}
+
+/* ---------- saving progress (file in the shoot folder + this browser) ---------- */
+let saveT=0,saving=false,again=false;
+function setSave(t){$('save').textContent=t}
+function snapshot(){return {version:1,ratings:S.ratings,exported:S.exported,dest:S.dest,idx:S.idx,updated:Date.now()}}
+function persist(quiet){
+  const snap=snapshot();LS.set('shoot:'+S.folder.id,snap);
+  const r=LS.get('recent')||[],rated=Object.keys(S.ratings).length,keep=Object.values(S.ratings).filter(x=>KEEP.includes(x)).length;
+  LS.set('recent',[{id:S.folder.id,name:S.folder.name,total:S.files.length,rated,keep},...r.filter(x=>x.id!==S.folder.id)].slice(0,12));
+  if(!S.folder.canAdd){setSave('Saved in this browser');return}
+  if(quiet&&S.progId)return;
+  clearTimeout(saveT);setSave('Saving…');
+  saveT=setTimeout(async function go(){
+    if(saving){again=true;return}saving=true;
+    const body=JSON.stringify(snapshot());
+    try{
+      if(S.progId)await api('/files/'+S.progId+qs({uploadType:'media',supportsAllDrives:true}),{upload:true,method:'PATCH',body,headers:{'Content-Type':'application/json'}});
+      else{const b='scb'+Math.random().toString(36).slice(2),mp=`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:PROG,parents:[S.folder.id],mimeType:'application/json'})}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`;
+        const r=await api('/files'+qs({uploadType:'multipart',supportsAllDrives:true,fields:'id'}),{upload:true,method:'POST',body:mp,headers:{'Content-Type':'multipart/related; boundary='+b}});S.progId=r.id}
+      setSave('Saved to Drive');
+    }catch(e){setSave('Saved in this browser · Drive save failed')}
+    saving=false;if(again){again=false;go()}
+  },1500);
+}
+
+/* ---------- images ---------- */
+const sizeFor=()=>Math.min(2400,Math.ceil(Math.max(innerWidth,innerHeight)*(devicePixelRatio||1)));
+const prevUrl=(f,s)=>f.thumbnailLink?f.thumbnailLink.replace(/=s\d+(-[a-z]+)?$/,'')+'=s'+s:null;
+async function refreshLinks(){
+  try{const fr=await listPhotos(S.folder.id),m=new Map(fr.map(f=>[f.id,f.thumbnailLink]));S.files.forEach(f=>{if(m.has(f.id))f.thumbnailLink=m.get(f.id)});msg('')}catch{}
+}
+let refreshing=null;
+async function fullUrl(f){
+  if(full.has(f.id))return full.get(f.id);
+  const r=await api('/files/'+f.id+qs({alt:'media',supportsAllDrives:true}),{raw:true});
+  const u=URL.createObjectURL(await r.blob());full.set(f.id,u);
+  if(full.size>6){const k=full.keys().next().value;URL.revokeObjectURL(full.get(k));full.delete(k)}
+  return u;
+}
+function loadInto(img,src){return new Promise((res,rej)=>{img.onload=()=>res();img.onerror=()=>rej(new Error('load'));img.src=src})}
+const pre=new Map();
+function preload(f){if(!f||pre.has(f.id))return;const u=prevUrl(f,sizeFor());if(!u)return;const im=new Image();im.referrerPolicy='no-referrer';im.src=u;pre.set(f.id,im);if(pre.size>12)pre.delete(pre.keys().next().value)}
+
+/* ---------- viewer ---------- */
+const cur=()=>S.files[S.idx];
+let showTok=0;
+async function show(){
+  const f=cur();if(!f)return;const tok=++showTok;
+  $('fname').textContent=f.name;counts();badge();setZoom(false);
+  const img=$('img');$('load').classList.remove('hide');$('load').firstElementChild.innerHTML='<div class="spin"></div>Loading…';
+  img.style.visibility='hidden';
+  try{
+    let src=prevUrl(f,sizeFor());
+    try{if(!src)throw 0;await loadInto(img,src)}
+    catch{ // link expired or no preview: refresh links once, then fall back to the original
+      if(src){refreshing=refreshing||refreshLinks().finally(()=>setTimeout(()=>refreshing=null,30000));await refreshing;src=prevUrl(f,sizeFor())}
+      if(tok!==showTok)return;
+      try{if(!src)throw 0;await loadInto(img,src)}catch{await loadInto(img,await fullUrl(f))}
+    }
+    if(tok!==showTok)return;
+    img.style.visibility='';$('load').classList.add('hide');if(S.info)details();
+  }catch(e){if(tok!==showTok)return;$('load').firstElementChild.textContent='Couldn\'t load this photo ('+e.message+'). Press → to skip.'}
+  for(let d=1;d<=4;d++)preload(S.files[S.idx+d]);preload(S.files[S.idx-1]);
+}
+function counts(){
+  const v=Object.values(S.ratings),c=t=>v.filter(r=>r===t).length,k=c('best')+c('strong')+c('fine');
+  $('count').innerHTML=`${(S.idx+1).toLocaleString()} / ${S.files.length.toLocaleString()} · <b style="color:var(--ink)">${k}</b> keepers <span class="pill" style="margin-left:8px"><i class="dot" style="background:var(--best)"></i>${c('best')} <i class="dot" style="background:var(--strong);margin-left:6px"></i>${c('strong')} <i class="dot" style="background:var(--fine);margin-left:6px"></i>${c('fine')} <i class="dot" style="background:var(--reject);margin-left:6px"></i>${c('reject')}</span>`;
+}
+function badge(){const r=S.ratings[cur().id],b=$('badge');if(!r){b.classList.add('hide');return}b.classList.remove('hide');b.textContent=TIERS[r][0];b.style.background=TIERS[r][1]}
+function go(i){i=Math.max(0,Math.min(S.files.length-1,i));if(i===S.idx)return;S.idx=i;show();persist()}
+function rate(id,r,adv){
+  const prev=S.ratings[id]||null;if(prev===r)return;
+  undo.push({id,prev,idx:S.idx});if(undo.length>500)undo.shift();
+  if(r)S.ratings[id]=r;else delete S.ratings[id];persist();
+  if(S.grid){renderGrid();return}
+  counts();badge();if(adv&&S.idx<S.files.length-1)setTimeout(()=>go(S.idx+1),120);
+}
+function doUndo(){
+  const u=undo.pop();if(!u)return;if(u.prev)S.ratings[u.id]=u.prev;else delete S.ratings[u.id];persist();
+  if(S.grid){renderGrid();return}
+  if(S.idx!==u.idx){S.idx=u.idx;show()}else{counts();badge()}
+}
+function nextUnrated(){for(let i=1;i<=S.files.length;i++){const j=(S.idx+i)%S.files.length;if(!S.ratings[S.files[j].id]){go(j);return}}}
+
+/* zoom: shows the preview enlarged right away, swaps in the original when it arrives */
+let lastM={x:.5,y:.5},zTok=0;
+async function setZoom(on){
+  S.zoom=on;const st=$('stage'),img=$('img'),zm=$('zoomMsg');st.classList.toggle('zoom',on);
+  if(!on){img.style.transform='';img.style.width='';img.style.height='';zm.classList.add('hide');zTok++;return}
+  const f=cur(),md=f.imageMediaMetadata||{},t=++zTok;
+  const W=md.width||img.naturalWidth,H=md.height||img.naturalHeight;img.style.width=W+'px';img.style.height=H+'px';pan();
+  if(!full.has(f.id)){zm.textContent='Loading full resolution…';zm.classList.remove('hide')}
+  try{const u=await fullUrl(f);if(t!==zTok)return;await loadInto(img,u);if(t!==zTok)return;img.style.width=img.naturalWidth+'px';img.style.height=img.naturalHeight+'px';pan();zm.classList.add('hide')}
+  catch(e){if(t===zTok)zm.textContent='Couldn\'t load the original: '+e.message}
+}
+function pan(){
+  if(!S.zoom)return;const st=$('stage'),img=$('img'),W=st.clientWidth,H=st.clientHeight,w=parseFloat(img.style.width)||img.naturalWidth,h=parseFloat(img.style.height)||img.naturalHeight;
+  img.style.transform=`translate(${w<=W?(W-w)/2:(W-w)*lastM.x}px,${h<=H?(H-h)/2:(H-h)*lastM.y}px)`;
+}
+const mpos=e=>{const r=e.currentTarget.getBoundingClientRect();lastM={x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}};
+$('stage').addEventListener('mousemove',e=>{mpos(e);pan()});
+$('stage').addEventListener('click',e=>{mpos(e);if($('img').src)toggleZoom()});
+function toggleZoom(){if(!S.zoom)setZoom(true);else{setZoom(false);const f=cur(),u=prevUrl(f,sizeFor());if(u)$('img').src=u}}
+
+const fmtSize=b=>{b=+b;if(!b)return '—';const u=['B','KB','MB','GB'];let i=0;while(b>=1024&&i<3){b/=1024;i++}return b.toFixed(i?1:0)+' '+u[i]};
+const fmtDate=d=>{if(!d)return '—';const t=new Date(String(d).replace(/^(\d{4}):(\d\d):(\d\d) /,'$1-$2-$3T'));return isNaN(t)?String(d):t.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})};
+function details(){
+  const f=cur(),m=f.imageMediaMetadata||{};
+  const et=m.exposureTime?(m.exposureTime<1?'1/'+Math.round(1/m.exposureTime):m.exposureTime)+' s':null;
+  const rows=[['Type',(f.mimeType||'').replace('image/','').toUpperCase()+' image'],['Size',fmtSize(f.size)],['Location',S.folder.name],['Dimensions',m.width?`${m.width} × ${m.height}`:null],['Date taken',m.time?fmtDate(m.time):null],['Camera make',m.cameraMake],['Camera model',m.cameraModel],['Lens',m.lens],['Aperture',m.aperture?'f/'+m.aperture:null],['Exposure',et],['ISO',m.isoSpeed],['Focal length',m.focalLength?m.focalLength+' mm':null],['Flash',m.flashUsed==null?null:(m.flashUsed?'Flash fired':'No flash')],['Modified',fmtDate(f.modifiedTime)],['Created',fmtDate(f.createdTime)]];
+  const dl=$('dl');dl.textContent='';
+  rows.filter(r=>r[1]!=null&&r[1]!=='').forEach(([k,v])=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=v;dl.append(dt,dd)});
+}
+function toggleInfo(){S.info=!S.info;$('info').classList.toggle('hide',!S.info);if(S.info)details();pan()}
+
+/* ---------- grid ---------- */
+function toggleGrid(on=!S.grid){
+  S.grid=on;$('grid').classList.toggle('hide',!on);$('gridBtn').textContent=on?'Back to photo':'Grid';
+  if(on){S.gsel=S.gsel||cur().id;renderGrid()}else{const i=S.files.findIndex(f=>f.id===S.gsel);if(i>=0&&i!==S.idx){S.idx=i;show()}}
+}
+let tileObs=null;
+function renderGrid(){
+  const g=$('grid'),st=g.scrollTop,groups={best:[],strong:[],fine:[],unrated:[],reject:[]};
+  S.files.forEach(f=>groups[S.ratings[f.id]||'unrated'].push(f));
+  const k=groups.best.length+groups.strong.length+groups.fine.length;
+  const sec=(label,color,list)=>!list.length?'':`<h2><i class="dot" style="background:${color}"></i>${label} <small>${list.length}</small></h2><div class="tiles">${list.map(f=>`<button class="tile${f.id===S.gsel?' sel':''}" data-id="${esc(f.id)}" title="${esc(f.name)}"><img alt="" loading="lazy" referrerpolicy="no-referrer" data-t="${esc(f.id)}"><span>${esc(f.name)}</span></button>`).join('')}</div>`;
+  g.innerHTML=`<div class="gridbar"><b>${k} keepers</b><span class="count">Click a photo, then press <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>X</kbd><kbd>0</kbd> to change its tier · <kbd>Enter</kbd> to open it full screen</span><span class="grow"></span><button class="pri" id="exportBtn"${k?'':' disabled'}>Copy keepers to Selects</button></div>`+
+    sec('Best','var(--best)',groups.best)+sec('Strong','var(--strong)',groups.strong)+sec('Fine','var(--fine)',groups.fine)+sec('Not rated yet','#5f6368',groups.unrated)+sec('Rejected','var(--reject)',groups.reject);
+  g.scrollTop=st;$('exportBtn').onclick=exportDialog;
+  const byId=new Map(S.files.map(f=>[f.id,f]));
+  g.querySelectorAll('img[data-t]').forEach(im=>{const f=byId.get(im.dataset.t),u=f&&prevUrl(f,400);if(u)im.src=u;im.onerror=()=>{im.onerror=null;im.style.opacity=.2}});
+}
+$('grid').addEventListener('click',e=>{const t=e.target.closest('.tile');if(!t)return;S.gsel=t.dataset.id;$('grid').querySelectorAll('.tile.sel').forEach(x=>x.classList.remove('sel'));t.classList.add('sel')});
+$('grid').addEventListener('dblclick',e=>{const t=e.target.closest('.tile');if(t){S.gsel=t.dataset.id;toggleGrid(false)}});
+function gridMove(d){
+  const tiles=[...$('grid').querySelectorAll('.tile')];let i=tiles.findIndex(t=>t.dataset.id===S.gsel);
+  i=Math.max(0,Math.min(tiles.length-1,i+d));const t=tiles[i];if(!t)return;
+  S.gsel=t.dataset.id;tiles.forEach(x=>x.classList.toggle('sel',x===t));t.scrollIntoView({block:'nearest'});
+}
+
+/* ---------- copy keepers into Selects (server-side copies) ---------- */
+function modal(h){$('mbox').innerHTML=h;$('modal').classList.remove('hide')}
+function closeModal(){$('modal').classList.add('hide')}
+let exporting=false;
+const expTier=v=>v&&(typeof v==='string'?v:v.t);
+function exportDialog(){
+  const keepers=S.files.filter(f=>KEEP.includes(S.ratings[f.id])),todo=keepers.filter(f=>expTier(S.exported[f.id])!==S.ratings[f.id]),moved=todo.filter(f=>S.exported[f.id]).length;
+  const where=S.folder.canAdd?`a <b>Selects</b> folder inside “${esc(S.folder.name)}”`:`a new folder “${esc(S.folder.name)} Selects” in your My Drive (you can't add folders to this shared shoot folder)`;
+  modal(`<h3>Copy keepers to Selects</h3><p>${todo.length?`${todo.length} photo${todo.length>1?'s':''} will be copied into Best / Strong / Fine folders in ${where}. Originals stay where they are.`:'Everything is already copied.'}${keepers.length-todo.length?` ${keepers.length-todo.length} already copied earlier will be skipped.`:''}${moved?` ${moved} changed tier since the last copy; their old copies will be moved to the trash.`:''}</p>
+  <div class="bar"><i id="pbar"></i></div><p id="pmsg" style="margin:0 0 16px"></p>
+  <div class="row" style="justify-content:flex-end"><button id="mClose">Close</button>${todo.length?'<button class="pri" id="mGo">Start copying</button>':''}</div>`);
+  $('mClose').onclick=()=>{if(!exporting)closeModal()};
+  if($('mGo'))$('mGo').onclick=()=>runExport(todo);
+}
+async function ensureFolder(name,parent){
+  const q=`name='${name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}' and mimeType='${FOLDER}' and trashed=false and '${parent||'root'}' in parents`;
+  const r=await api('/files'+qs({q,fields:'files(id)',supportsAllDrives:true,includeItemsFromAllDrives:true}));
+  if(r.files[0])return r.files[0].id;
+  const c=await api('/files'+qs({fields:'id',supportsAllDrives:true}),{method:'POST',json:true,body:JSON.stringify({name,mimeType:FOLDER,parents:[parent||'root']})});
+  return c.id;
+}
+async function runExport(todo){
+  exporting=true;$('mGo').disabled=true;$('mClose').disabled=true;
+  const say=t=>$('pmsg').textContent=t;
+  try{
+    say('Setting up folders…');
+    const root=await ensureFolder(S.folder.canAdd?'Selects':S.folder.name+' Selects',S.folder.canAdd?S.folder.id:'root'),sub={};
+    for(const t of KEEP)sub[t]=await ensureFolder(TIERS[t][0],root);
+    S.dest={root};
+    let n=0,fail=0;const list=[...todo],t0=Date.now();
+    const worker=async()=>{while(list.length){const f=list.shift(),tier=S.ratings[f.id],old=S.exported[f.id];
+      try{
+        const c=await api('/files/'+f.id+'/copy'+qs({fields:'id',supportsAllDrives:true}),{method:'POST',json:true,body:JSON.stringify({name:f.name,parents:[sub[tier]]})});
+        if(old&&old.c){try{await api('/files/'+old.c+qs({supportsAllDrives:true}),{method:'PATCH',json:true,body:JSON.stringify({trashed:true})})}catch{}}
+        S.exported[f.id]={t:tier,c:c.id};
+      }catch(e){fail++}
+      n++;$('pbar').style.width=(n/todo.length*100)+'%';
+      const eta=Math.round((Date.now()-t0)/n*(todo.length-n)/1000);
+      say(`Copied ${n-fail} of ${todo.length}${fail?` · ${fail} failed`:''}${list.length?` · about ${eta<60?eta+'s':Math.ceil(eta/60)+' min'} left`:''}`);
+      if(n%10===0)persist()}};
+    await Promise.all([worker(),worker(),worker(),worker()]);persist();
+    say(fail?`Done, but ${fail} couldn't be copied. Run it again to retry just those.`:`Done. ${n} photos copied.`);
+    const a=document.createElement('a');a.href='https://drive.google.com/drive/folders/'+encodeURIComponent(root);a.target='_blank';a.rel='noopener';a.textContent=' Open Selects in Google Drive';a.style.color='var(--acc)';$('pmsg').append(a);
+  }catch(e){say('Stopped: '+e.message+' Progress is saved, so run it again to continue.')}
+  exporting=false;$('mClose').disabled=false;
+}
+
+/* ---------- navigation & keys ---------- */
+$('homeBtn').onclick=()=>{toggleGrid(false);$('app').classList.add('hide');$('start').classList.remove('hide');renderRecent()};
+$('gridBtn').onclick=()=>toggleGrid();$('infoBtn').onclick=toggleInfo;
+$('modal').addEventListener('click',e=>{if(e.target.id==='modal'&&!exporting)closeModal()});
+addEventListener('resize',pan);
+addEventListener('keydown',e=>{
+  if($('app').classList.contains('hide')||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(!$('modal').classList.contains('hide')){if(e.key==='Escape'&&!exporting)closeModal();return}
+  const k=e.key.toLowerCase(),map={'1':'best','2':'strong','3':'fine','x':'reject','0':null,'backspace':null};
+  if(S.grid){
+    if(k in map&&S.gsel){e.preventDefault();rate(S.gsel,map[k],false)}
+    else if(k==='arrowright'){e.preventDefault();gridMove(1)}else if(k==='arrowleft'){e.preventDefault();gridMove(-1)}
+    else if(k==='enter'||k==='g'||k==='escape'){e.preventDefault();toggleGrid(false)}
+    else if(k==='u')doUndo();
+    return;
+  }
+  if(k==='arrowright'||k===' '){e.preventDefault();go(S.idx+1)}
+  else if(k==='arrowleft'){e.preventDefault();go(S.idx-1)}
+  else if(k in map){e.preventDefault();rate(cur().id,map[k],map[k]!==null)}
+  else if(k==='z'){if($('img').src)toggleZoom()}
+  else if(k==='u')doUndo();else if(k==='n')nextUnrated();else if(k==='i')toggleInfo();else if(k==='g')toggleGrid(true);
+  else if(k==='escape'){if(S.zoom)toggleZoom();else if(S.info)toggleInfo()}
+  else if(k==='home')go(0);else if(k==='end')go(S.files.length-1);
+});
+addEventListener('beforeunload',e=>{if(saving||exporting){e.preventDefault();e.returnValue=''}});
+
+/* ---------- boot ---------- */
+(async()=>{
+  if(!cid()){$('setup').classList.remove('hide');return}
+  await initAuth();
+  if(token)afterSignIn();else $('signin').classList.remove('hide');
+})();
+}
+</script>
+</body></html>
